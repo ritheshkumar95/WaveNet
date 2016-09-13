@@ -1,5 +1,5 @@
 
-> Repo for Speech Synth. work
+> Repo for Speech Synth. work <br>
 > Author: Rithesh Kumar
 
 wavenet.py --> Implementation of DeepMind's wavenet paper. This file contains the architecture and the code to start training <br>
