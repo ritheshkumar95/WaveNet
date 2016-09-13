@@ -1,7 +1,5 @@
---------------------------------------------------------------------
 Repo for Speech Synth. work
-Author: Rithesh Kumar
--------------------------------------------------------------------
+@Author: Rithesh Kumar
 
 wavenet.py --> Implementation of DeepMind's wavenet paper. This file contains the architecture and the code to start training
 lib --> Library where I've added custom layers coded in Theano. This is built on top of Ishaan's library structure.
