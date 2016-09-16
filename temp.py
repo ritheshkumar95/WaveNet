@@ -24,7 +24,11 @@ arr2 = T.nnet.conv2d(arr,W,border_mode=(0,1),filter_dilation=(1,1)).eval()
 arr3 = T.nnet.conv2d(arr2,W,border_mode=(1,2),filter_dilation=(1,2)).eval()
 arr4 = T.nnet.conv2d(arr3,W,subsample=(1,2),filter_dilation=(1,1)).eval()
 
-dilations = np.asarray([[1,2,4,8,16,32,64,128,256,512]*3]).tolist()[0]
-for value in dilations:
-    arr = T.nnet.conv2d(arr,w,filter_dilation=(1,value))
-arr.eval()
+dilation = 4
+arr = np.random.randn(32,64,1,3072).astype('float32')
+W = np.random.randn(128,64,1,2).astype('float32')
+true_conv = T.nnet.conv2d(arr,W,border_mode=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:arr.shape[-1]].eval()
+first_part = T.nnet.conv2d(arr[:,:,:,:dilation],np.expand_dims(W[:,:,:,0],axis=-1))
+new_conv = T.nnet.conv2d(arr,W,filter_dilation=(1,dilation))
+conc = T.concatenate((first_part,new_conv),axis=-1).eval()
+(conc==true_conv).all()
