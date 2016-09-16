@@ -406,19 +406,13 @@ def HRED_GRU(name, input_dim, hidden_dim, inputs, h0=None):
     return out
 
 
-def conv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False,pad='valid',filter_dilation=(1,1),run_mode=0,smart_padding=False):
+def conv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False,pad='valid',filter_dilation=(1,1),run_mode=0):
     W = lib.param(
         name+'.W',
         lasagne.init.HeNormal().sample((n_filters,depth,1,kernel)).astype('float32')
         )
 
-    if smart_padding:
-        dilation = filter_dilation[1]
-        first_part = T.nnet.conv2d(input[:,:,:,:dilation],W[:,:,:,0][:,:,:,None])
-        conv_wtoutpadding = T.nnet.conv2d(arr,W,filter_dilation=(1,dilation))
-        out = T.concatenate((first_part,conv_wtoutpadding),axis=-1)
-    else:
-        out = T.nnet.conv2d(input,W,subsample=(1,stride),border_mode=pad,filter_dilation=filter_dilation)
+    out = T.nnet.conv2d(input,W,subsample=(1,stride),border_mode=pad,filter_dilation=filter_dilation)
 
     if bias:
         b = lib.param(
@@ -445,11 +439,11 @@ def ResNetConv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=F
     out = T.nnet.relu(conv2+project)
     return out
 
-def WaveNetConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,dilation=1,smart_padding=True):
+def WaveNetConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,dilation=1):
     #WaveNet ResNet Unit with residual connections.
     ####### Dilated Causal Convolutions would require too much padding
     ####### Use smart_padding=False for the more memory consuming version
-    conv = lib.ops.conv1d(name+".filter&gate",input,kernel,1,2*n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation),smart_padding=True)
+    conv = lib.ops.conv1d(name+".filter&gate",input,kernel,1,2*n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))
     z = T.tanh(conv[:,:n_filters,:,:])*T.nnet.sigmoid(conv[:,n_filters:,:,:])
     out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=True,batchnorm=batchnorm)
     return out+input,out
