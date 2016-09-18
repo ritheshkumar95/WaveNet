@@ -1,4 +1,4 @@
-# WaveNet implementation in Keras
+# WaveNet implementation in Theano
 Based on https://deepmind.com/blog/wavenet-generative-model-raw-audio/ and https://arxiv.org/pdf/1609.03499.pdf.
 
 Disclaimer: this is a re-implementation of the model described in the WaveNet paper by Google Deepmind. This repository is not associated with Google Deepmind.
