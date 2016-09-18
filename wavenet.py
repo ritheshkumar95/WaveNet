@@ -18,13 +18,13 @@ import lasagne
 # Hyperparams
 NB_EPOCH=10
 BATCH_SIZE = 8
-FRAME_SIZE = 256 # How many samples per frame
+FRAME_SIZE = 0 # How many samples per frame
 Q_LEVELS = 256 # How many levels to use when discretizing samples. e.g. 256 = 8-bit scalar quantization
 DATA_PATH = '/data/lisatmp3/kumarrit/blizzard'
 N_FILES = 200
 BITRATE = 16000
 
-SEQ_LEN = 1024 # Total length (# of samples) of each truncated BPTT sequence
+SEQ_LEN = 4096 # Total length (# of samples) of each truncated BPTT sequence
 Q_ZERO = numpy.int32(Q_LEVELS//2) # Discrete value correponding to zero amplitude
 
 #data_feeder = list(dataset.feed_epoch(DATA_PATH, N_FILES, BATCH_SIZE, SEQ_LEN, FRAME_SIZE, Q_LEVELS, Q_ZERO))
