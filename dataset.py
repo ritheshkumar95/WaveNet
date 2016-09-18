@@ -9,7 +9,7 @@ import numpy as np
 
 random_seed = 123
 
-def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZERO):
+def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZERO,RF=1024):
     global random_seed
     """
     Generator that yields training inputs (subbatch, reset). `subbatch` contains
@@ -33,14 +33,36 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
         return int(numpy.ceil(x / float(y))) * y
 
     def mewlaw_quantize(data):
-        companded = np.sign(data)*(np.log(1+255*np.abs(data))/np.log(256))
-        data = companded
-        eps = numpy.float64(1e-5)
-        data *= (Q_LEVELS/2 - eps)
-        data += eps/2
-        data = data.astype('int32')
-        return data
+	final_data = []
+	for i in xrange(data.shape[0]):
+	    final_data.append(float_to_uint8(ulaw(wav_to_float(data[i]))))
+        return np.asarray(final_data,dtype=np.uint8)
 
+    def ulaw(x, u=255):
+        x = np.sign(x) * (np.log(1 + u * np.abs(x)) / np.log(1 + u))
+        return x
+
+    def float_to_uint8(x):
+        x += 1.
+        x /= 2.
+        uint8_max_value = np.iinfo('uint8').max
+        x *= uint8_max_value
+        x = x.astype('uint8')
+        return x
+
+
+    def wav_to_float(x):
+        try:
+            max_value = np.iinfo(x.dtype).max
+            min_value = np.iinfo(x.dtype).min
+        except:
+            max_value = np.finfo(x.dtype).max
+            min_value = np.finfo(x.dtype).min
+        x = x.astype('float64', casting='safe')
+        x -= min_value
+        x /= ((max_value - min_value) / 2.)
+        x -= 1.
+        return x
 
     def batch_quantize(data):
         """
@@ -60,7 +82,7 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
         # data *= (((Q_LEVELS/2.) - eps) / numpy.abs(data).max(axis=1)[:, None])
         # data += Q_LEVELS/2
 
-        data = data.astype('int32')
+        data = data.astype('uint8')
 
         return data
 
@@ -95,7 +117,7 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
             batch = batch_quantize(batch)
 
             batch = numpy.concatenate([
-                numpy.full((BATCH_SIZE, OVERLAP), Q_ZERO, dtype='int32'),
+                numpy.full((BATCH_SIZE, OVERLAP), Q_ZERO, dtype=np.uint8),
                 batch
             ], axis=1)
         else:
@@ -110,5 +132,9 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
 
         for i in xrange((batch.shape[1] - OVERLAP) // SEQ_LEN):
             reset = numpy.int32(i==0)
-            subbatch = batch[:, i*SEQ_LEN : (i+1)*SEQ_LEN + OVERLAP]
+	    start = i*SEQ_LEN-RF
+	    if start<0:
+		start = 0
+	    end = (i+1)*SEQ_LEN
+            subbatch = batch[:, start : end]
             yield (subbatch, reset)

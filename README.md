@@ -1,9 +1,10 @@
+# WaveNet implementation in Keras
+Based on https://deepmind.com/blog/wavenet-generative-model-raw-audio/ and https://arxiv.org/pdf/1609.03499.pdf.
 
-> Repo for Speech Synth. work <br>
-> Author: Rithesh Kumar
+Disclaimer: this is a re-implementation of the model described in the WaveNet paper by Google Deepmind. This repository is not associated with Google Deepmind.
 
-wavenet.py --> Implementation of DeepMind's wavenet paper. This file contains the architecture and the code to start training <br>
-<br>
-lib --> Library where I've added custom layers coded in Theano. This is built on top of Ishaan's library structure. <br>
-<br>
-dataset.py --> Loads the files from /data/lisatmp3/kumarrit/blizzard where there are ~140721 speech sections from Blizzard dataset chunked into smaller (8 second) sections. I have implemented mewlaw quantization, but temporarily do not use that. 
+[Listen to a sample 🎶!](https://soundcloud.com/rithesh-kumar-772989650/sets/wavenet-samples)
+
+- wavenet.py -> Train the network
+- lib/ops.py -> Mini theano library
+- generate.py -> generates samples
