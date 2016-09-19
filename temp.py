@@ -32,3 +32,14 @@ first_part = T.nnet.conv2d(arr[:,:,:,:dilation],np.expand_dims(W[:,:,:,0],axis=-
 new_conv = T.nnet.conv2d(arr,W,filter_dilation=(1,dilation))
 conc = T.concatenate((first_part,new_conv),axis=-1).eval()
 (conc==true_conv).all()
+
+import numpy as np
+import theano
+import theano.tensor as T
+dilations = np.asarray([[1,2,4,8,16,32,64,128,256,512]*1]).tolist()[0]
+arr = np.arange(1,1026).astype('float32').reshape((1,1,1,1025))
+W = np.asarray([1,1]).astype('float32').reshape((1,1,1,2))
+arr = T.nnet.conv2d(arr,W)
+for value in dilations:
+#    arr = T.nnet.conv2d(arr,W,filter_dilation=(1,value))
+    arr = T.nnet.conv2d(arr,W,subsample=(1,2))

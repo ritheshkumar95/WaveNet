@@ -42,6 +42,10 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
         x = np.sign(x) * (np.log(1 + u * np.abs(x)) / np.log(1 + u))
         return x
 
+    def invulaw(y,u=255):
+        y = np.sign(y)*(1./u)*(np.power(1+u,np.abs(y))-1)
+        return y
+
     def float_to_uint8(x):
         x += 1.
         x /= 2.
@@ -87,6 +91,8 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
         return data
 
     paths = [data_path+'/p{}.flac'.format(i) for i in xrange(n_files)]
+    #rand_idx = np.random.randint(0,141867,n_files)
+    #paths = [data_path+'/p{}.flac'.format(i) for i in rand_idx]
 
     random.seed(random_seed)
     random.shuffle(paths)

@@ -446,13 +446,14 @@ def WaveNetConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,d
     conv1 = lib.ops.conv1d(name+".filter",input,kernel,1,n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:input.shape[-1]]
     conv2 = lib.ops.conv1d(name+".gate",input,kernel,1,n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:input.shape[-1]]
     z = T.tanh(conv1)*T.nnet.sigmoid(conv2)
-    out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=True,batchnorm=batchnorm)
+    out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=bias,batchnorm=batchnorm)
     return out+input,out
 
 def WaveNetGenConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,run_mode=1):
-    conv = lib.ops.conv1d(name+".filter&gate",input,kernel,2,2*n_filters,depth,bias,batchnorm,run_mode=run_mode)
-    z = T.tanh(conv[:,:n_filters,:,:])*T.nnet.sigmoid(conv[:,n_filters:,:,:])
-    out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=True,batchnorm=True,run_mode=run_mode)
+    conv1 = lib.ops.conv1d(name+".filter",input,kernel,2,n_filters,depth,bias,batchnorm)
+    conv2 = lib.ops.conv1d(name+".gate",input,kernel,2,n_filters,depth,bias,batchnorm)
+    z = T.tanh(conv1)*T.nnet.sigmoid(conv2)
+    out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=bias,batchnorm=batchnorm)
     return out+input[:,:,:,1::2],out
 
 

@@ -14,7 +14,6 @@ import scipy.io.wavfile
 import time
 import lasagne
 
-
 # Hyperparams
 NB_EPOCH=100
 BATCH_SIZE = 8
@@ -24,18 +23,18 @@ DATA_PATH = '/data/lisatmp3/kumarrit/blizzard'
 N_FILES = 8
 BITRATE = 16000
 
-SEQ_LEN = 2048 # Total length (# of samples) of each truncated BPTT sequence
 Q_ZERO = numpy.int32(Q_LEVELS//2) # Discrete value correponding to zero amplitude
-#Q_ZERO=None
-RF=1024
-
+N_BLOCKS=1
+RF=N_BLOCKS*1024-N_BLOCKS+2
+SEQ_LEN=2*RF
+n_filters=256
 #data_feeder = list(dataset.feed_epoch(DATA_PATH, N_FILES, BATCH_SIZE, SEQ_LEN, FRAME_SIZE, Q_LEVELS, Q_ZERO))
 
 def network(input_sequences):
     batch_size = input_sequences.shape[0]
     length = input_sequences.shape[1]
     #inp = input_sequences[:,None,None,:]
-    dilations = np.asarray([[1,2,4,8,16,32,64,128,256,512]*1]).tolist()[0]
+    dilations = np.asarray([[1,2,4,8,16,32,64,128,256,512]*N_BLOCKS]).tolist()[0]
 #    start = lib.ops.Embedding(
 #        'Embedding',
 #        Q_LEVELS,
@@ -43,7 +42,7 @@ def network(input_sequences):
 #        input_sequences,
 #    ).transpose(0,2,1)[:,:,None,:] #(32, 256, 1, 8960)
     start = T.extra_ops.to_one_hot(input_sequences.flatten(),nb_class=256).reshape((batch_size,length,256)).transpose(0,2,1)[:,:,None,:]
-    conv1 = lib.ops.conv1d("causal-conv",start,2,1,256,256,bias=False,batchnorm=False,pad=(0,1))[:,:,:,:length]
+    conv1 = lib.ops.conv1d("causal-conv",start,2,1,n_filters,256,bias=False,batchnorm=False,pad=(0,1))[:,:,:,:length]
     # conv1,skip1 = lib.ops.WaveNetConv1d("Block-1",emb,2,128,256,bias=True,batchnorm=True,dilation=1)
     # conv2,skip2 = lib.ops.WaveNetConv1d("Block-2",conv1,2,128,256,bias=True,batchnorm=True,dilation=2)
     # conv3,skip3 = lib.ops.WaveNetConv1d("Block-3",conv2,2,128,256,bias=True,batchnorm=True,dilation=4)
@@ -55,16 +54,19 @@ def network(input_sequences):
     # conv9,skip9 = lib.ops.WaveNetConv1d("Block-9",conv8,2,1024,256,bias=True,batchnorm=True,dilation=256)
     # conv10,skip10 = lib.ops.WaveNetConv1d("Block-10",conv9,2,1024,512,bias=True,batchnorm=True,dilation=512)
     prev_conv = conv1
-    prev_skip = []
+    #prev_skip = []
+    prev_skip = T.zeros_like(conv1)
     i=0
     for value in dilations:
         i+=1
-        x,y = lib.ops.WaveNetConv1d("Block-%d"%i,prev_conv,2,256,256,bias=False,batchnorm=False,dilation=value)
+        x,y = lib.ops.WaveNetConv1d("Block-%d"%i,prev_conv,2,n_filters,n_filters,bias=False,batchnorm=False,dilation=value)
         prev_conv = x
-        prev_skip += [y]
+        prev_skip += y
+    #    prev_skip += [y]
 
-    out = T.nnet.relu(T.sum(prev_skip,axis=0))
-    out2 = T.nnet.relu(lib.ops.conv1d("Output.1",out,1,1,256,256,bias=False,batchnorm=False))
+    #out = T.nnet.relu(T.sum(prev_skip,axis=0))
+    out = T.nnet.relu(prev_skip)
+    out2 = T.nnet.relu(lib.ops.conv1d("Output.1",out,1,1,256,n_filters,bias=False,batchnorm=False))
     output = lib.ops.conv1d("Output.2",out2,1,1,256,256,bias=False,batchnorm=False)
     return output[:,:,0,RF-1:].transpose(0,2,1).reshape((-1,Q_LEVELS))
 
@@ -108,18 +110,13 @@ train_fn = theano.function(
 
 
 print "Training!"
-total_iters = 0
-
-NB_EPOCH=100
 for epoch in xrange(NB_EPOCH):
     costs = []
     times = []
     data_feeder = dataset.feed_epoch(DATA_PATH, N_FILES, BATCH_SIZE, SEQ_LEN, FRAME_SIZE, Q_LEVELS, Q_ZERO,RF)
-#    seqs = data_feeder[20][0]
-#    reset = data_feeder[20][1]
     print "Epoch : ",epoch
+    total_iters = 0
     for seqs, reset in data_feeder:
-    # while True:
         start_time = time.time()
         cost,pred = train_fn(seqs,0.001)
         total_time = time.time() - start_time
@@ -129,5 +126,3 @@ for epoch in xrange(NB_EPOCH):
         costs.append(cost)
         print "\tCost: ",np.mean(costs)
         print "\tTime: ",np.mean(times)
-#        if total_iters%500==0:
-#            generate_and_save_samples('iterno_%d'%total_iters)

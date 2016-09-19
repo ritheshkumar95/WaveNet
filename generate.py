@@ -24,7 +24,30 @@ N_FILES = 8
 BITRATE = 16000
 SEQ_LEN = 1024 # Total length (# of samples) of each truncated BPTT sequence
 Q_ZERO = numpy.int32(Q_LEVELS//2) # Discrete value correponding to zero amplitude
-RF=1024
+N_BLOCKS=1
+RF=N_BLOCKS*1024-N_BLOCKS+2
+SEQ_LEN=2*RF
+n_filters=256
+
+def network_gen(input_sequences):
+    batch_size = input_sequences.shape[0]
+    length = input_sequences.shape[1]
+    dilations = np.asarray([[1,2,4,8,16,32,64,128,256,512]*N_BLOCKS]).tolist()[0]
+    start = T.extra_ops.to_one_hot(input_sequences.flatten(),nb_class=256).reshape((batch_size,length,256)).transpose(0,2,1)[:,:,None,:]
+    conv1 = lib.ops.conv1d("causal-conv",start,2,1,256,n_filters,bias=False,batchnorm=False)
+    prev_conv = conv1
+    prev_skip = T.zeros_like(conv1[:,:,:,0])
+    i=0
+    for value in dilations:
+        i+=1
+        x,y = lib.ops.WaveNetGenConv1d("Block-%d"%i,prev_conv,2,n_filters,n_filters,bias=False,batchnorm=False)
+        prev_conv = x
+        prev_skip += y[:,:,:,-1]
+    out = T.nnet.relu(prev_skip[:,:,:,None])
+    out2 = T.nnet.relu(lib.ops.conv1d("Output.1",out,1,1,256,n_filters,bias=False,batchnorm=False))
+    output = lib.ops.conv1d("Output.2",out2,1,1,256,256,bias=False,batchnorm=False)
+    return output[:,:,0,0]
+
 
 tag='test_iter'
 def write_audio_file(name, data):
@@ -35,11 +58,15 @@ def write_audio_file(name, data):
     data -= 0.5
     data *= 0.95
 
+    def invulaw(y,u=255):
+        y = np.sign(y)*(1./u)*(np.power(1+u,np.abs(y))-1)
+        return y
+
     import scipy.io.wavfile
-    scipy.io.wavfile.write(name+'.wav',BITRATE,data)
+    scipy.io.wavfile.write(name+'.wav',BITRATE,invulaw(data))
 
 test_sequences = T.imatrix()
-output = network(test_sequences)
+output = network_gen(test_sequences)
 test_fn = theano.function(
     [test_sequences],
     output
@@ -65,12 +92,12 @@ N_SEQS = 8
 LENGTH = 8*BITRATE
 
 data_feeder = list(dataset.feed_epoch(DATA_PATH, N_FILES, BATCH_SIZE, SEQ_LEN, FRAME_SIZE, Q_LEVELS, Q_ZERO))
-data = data_feeder[5][0][:]
+data = data_feeder[0][0][:]
 samples = numpy.zeros((N_SEQS, LENGTH), dtype='int32')
 samples[:, :SEQ_LEN] = data[:,:SEQ_LEN]
 
-for t in xrange(SEQ_LEN, LENGTH):
-    probs = test_fn(samples[:,t-1024:t])
+for t in xrange(RF, LENGTH):
+    probs = test_fn(samples[:,t-RF:t])
     samples[:,t] = sample(probs,1)
     print t, samples[:,t]
 
