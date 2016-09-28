@@ -3,8 +3,9 @@ import numpy
 import theano
 import theano.tensor as T
 import cPickle as pickle
+from collections import OrderedDict
 
-_params = {}
+_params = OrderedDict()
 
 import locale
 

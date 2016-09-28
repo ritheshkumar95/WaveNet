@@ -15,26 +15,31 @@ import time
 import lasagne
 
 # Hyperparams
-NB_EPOCH=10
-BATCH_SIZE = 8
+NB_EPOCH=50
+BATCH_SIZE = 32
 FRAME_SIZE = 0 # How many samples per frame
 Q_LEVELS = 256 # How many levels to use when discretizing samples. e.g. 256 = 8-bit scalar quantization
 DATA_PATH = '/data/lisatmp3/kumarrit/blizzard'
-N_FILES = 8
+N_FILES = 100
 BITRATE = 16000
-SEQ_LEN = 1024 # Total length (# of samples) of each truncated BPTT sequence
 Q_ZERO = numpy.int32(Q_LEVELS//2) # Discrete value correponding to zero amplitude
 N_BLOCKS=1
 RF=N_BLOCKS*1024-N_BLOCKS+2
 SEQ_LEN=2*RF
-n_filters=256
+n_filters=512
 
 def network_gen(input_sequences):
     batch_size = input_sequences.shape[0]
     length = input_sequences.shape[1]
     dilations = np.asarray([[1,2,4,8,16,32,64,128,256,512]*N_BLOCKS]).tolist()[0]
+    # start = lib.ops.Embedding(
+    #     'Embedding',
+    #     Q_LEVELS,
+    #     Q_LEVELS,
+    #     input_sequences,
+    # ).transpose(0,2,1)[:,:,None,:] #(32, 256, 1, 8960)
     start = T.extra_ops.to_one_hot(input_sequences.flatten(),nb_class=256).reshape((batch_size,length,256)).transpose(0,2,1)[:,:,None,:]
-    conv1 = lib.ops.conv1d("causal-conv",start,2,1,256,n_filters,bias=False,batchnorm=False)
+    conv1 = lib.ops.conv1d("causal-conv",start,2,1,n_filters,256,bias=False,batchnorm=False)
     prev_conv = conv1
     prev_skip = T.zeros_like(conv1[:,:,:,0])
     i=0
@@ -53,6 +58,7 @@ tag='test_iter'
 def write_audio_file(name, data):
 
     data = data.astype('float32')
+
     data -= data.min()
     data /= data.max()
     data -= 0.5
@@ -64,8 +70,10 @@ def write_audio_file(name, data):
 
     import scipy.io.wavfile
     scipy.io.wavfile.write(name+'.wav',BITRATE,invulaw(data))
+    #scipy.io.wavfile.write(name+'.wav',BITRATE,data)
 
 test_sequences = T.imatrix()
+start_t = T.iscalar()
 output = network_gen(test_sequences)
 test_fn = theano.function(
     [test_sequences],
@@ -92,14 +100,16 @@ N_SEQS = 8
 LENGTH = 8*BITRATE
 
 data_feeder = list(dataset.feed_epoch(DATA_PATH, N_FILES, BATCH_SIZE, SEQ_LEN, FRAME_SIZE, Q_LEVELS, Q_ZERO))
+print "File loaded"
 data = data_feeder[0][0][:]
 samples = numpy.zeros((N_SEQS, LENGTH), dtype='int32')
-samples[:, :SEQ_LEN] = data[:,:SEQ_LEN]
+samples[:, :SEQ_LEN] = data[:N_SEQS,:SEQ_LEN]
 
 for t in xrange(RF, LENGTH):
     probs = test_fn(samples[:,t-RF:t])
-    samples[:,t] = sample(probs,1)
+    samples[:,t] = sample(probs,0.001)
+    #samples[:,t] = probs.flatten()
     print t, samples[:,t]
 
 for i in xrange(N_SEQS):
-    write_audio_file("sample_{}_{}".format(tag, i), samples[i])
+    write_audio_file("sample_{}_{}".format(tag, i), samples[i][RF:])

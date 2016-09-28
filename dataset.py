@@ -33,10 +33,10 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
         return int(numpy.ceil(x / float(y))) * y
 
     def mewlaw_quantize(data):
-	final_data = []
-	for i in xrange(data.shape[0]):
-	    final_data.append(float_to_uint8(ulaw(wav_to_float(data[i]))))
-        return np.asarray(final_data,dtype=np.uint8)
+    	final_data = []
+    	for i in xrange(data.shape[0]):
+    	    final_data.append(float_to_uint8(ulaw(wav_to_float(data[i]))))
+            return np.asarray(final_data,dtype=np.uint8)
 
     def ulaw(x, u=255):
         x = np.sign(x) * (np.log(1 + u * np.abs(x)) / np.log(1 + u))
@@ -90,7 +90,8 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
 
         return data
 
-    paths = [data_path+'/p{}.flac'.format(i) for i in xrange(n_files)]
+    start=100
+    paths = [data_path+'/p{}.flac'.format(start+i) for i in xrange(n_files)]
     #rand_idx = np.random.randint(0,141867,n_files)
     #paths = [data_path+'/p{}.flac'.format(i) for i in rand_idx]
 
@@ -144,3 +145,41 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
 	    end = (i+1)*SEQ_LEN
             subbatch = batch[:, start : end]
             yield (subbatch, reset)
+
+def preprocess(data_path, n_files, BATCH_SIZE, SEQ_LEN, RF=1024):
+    global random_seed
+    def round_to(x, y):
+        """round x up to the nearest y"""
+        return int(numpy.ceil(x / float(y))) * y
+
+    def ulaw(x, u=255):
+        x = np.sign(x) * (np.log(1 + u * np.abs(x)) / np.log(1 + u))
+        return x
+
+    start=100
+    paths = [data_path+'/p{}.flac'.format(start+i) for i in xrange(n_files)]
+    random.seed(random_seed)
+    random.shuffle(paths)
+    random_seed += 1
+    batches = []
+    for i in xrange(len(paths) / BATCH_SIZE):
+        batches.append(paths[i*BATCH_SIZE:(i+1)*BATCH_SIZE])
+    random.shuffle(batches)
+    for batch_paths in batches:
+        batch_seq_len = len(scikits.audiolab.flacread(batch_paths[0])[0])
+        batch_seq_len = round_to(batch_seq_len, SEQ_LEN)
+        batch = numpy.zeros(
+            (BATCH_SIZE, batch_seq_len),
+            dtype='float32'
+        )
+        for i, path in enumerate(batch_paths):
+            data, fs, enc = scikits.audiolab.flacread(path)
+            batch[i, :len(data)] = ulaw(data)
+            batch = batch.astype('float32')
+        for i in xrange((batch.shape[1]) // SEQ_LEN):
+            start = i*SEQ_LEN-RF
+            if start<0:
+                start = 0
+            end = (i+1)*SEQ_LEN
+            subbatch = batch[:, start : end]
+            yield (subbatch, start)
