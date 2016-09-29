@@ -440,9 +440,6 @@ def ResNetConv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=F
     return out
 
 def WaveNetConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,dilation=1):
-    #WaveNet ResNet Unit with residual connections.
-    ####### Dilated Causal Convolutions would require too much padding
-    ####### Use smart_padding=False for the more memory consuming version
     conv1 = lib.ops.conv1d(name+".filter",input,kernel,1,n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:input.shape[-1]]
     conv2 = lib.ops.conv1d(name+".gate",input,kernel,1,n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:input.shape[-1]]
     z = T.tanh(conv1)*T.nnet.sigmoid(conv2)

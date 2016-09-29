@@ -17,7 +17,6 @@ import lasagne
 # Hyperparams
 NB_EPOCH=50
 BATCH_SIZE = 32
-FRAME_SIZE = 0 # How many samples per frame
 Q_LEVELS = 256 # How many levels to use when discretizing samples. e.g. 256 = 8-bit scalar quantization
 DATA_PATH = '/data/lisatmp3/kumarrit/blizzard'
 N_FILES = 100
@@ -25,7 +24,8 @@ BITRATE = 16000
 Q_ZERO = numpy.int32(Q_LEVELS//2) # Discrete value correponding to zero amplitude
 N_BLOCKS=1
 RF=N_BLOCKS*1024-N_BLOCKS+2
-SEQ_LEN=2*RF
+FRAME_SIZE = RF # How many samples per frame
+SEQ_LEN=FRAME_SIZE+RF
 n_filters=512
 
 def network_gen(input_sequences):
@@ -41,14 +41,17 @@ def network_gen(input_sequences):
     start = T.extra_ops.to_one_hot(input_sequences.flatten(),nb_class=256).reshape((batch_size,length,256)).transpose(0,2,1)[:,:,None,:]
     conv1 = lib.ops.conv1d("causal-conv",start,2,1,n_filters,256,bias=False,batchnorm=False)
     prev_conv = conv1
-    prev_skip = T.zeros_like(conv1[:,:,:,0])
+    prev_skip = []
+    #prev_skip = T.zeros_like(conv1[:,:,:,0])
     i=0
     for value in dilations:
         i+=1
         x,y = lib.ops.WaveNetGenConv1d("Block-%d"%i,prev_conv,2,n_filters,n_filters,bias=False,batchnorm=False)
         prev_conv = x
-        prev_skip += y[:,:,:,-1]
-    out = T.nnet.relu(prev_skip[:,:,:,None])
+        #prev_skip += y[:,:,:,-1]
+        prev_skip += [y[:,:,:,-1]]
+    #out = T.nnet.relu(prev_skip[:,:,:,None])
+    out = T.nnet.relu(T.sum(prev_skip,axis=0))[:,:,:,None]
     out2 = T.nnet.relu(lib.ops.conv1d("Output.1",out,1,1,256,n_filters,bias=False,batchnorm=False))
     output = lib.ops.conv1d("Output.2",out2,1,1,256,256,bias=False,batchnorm=False)
     return output[:,:,0,0]
@@ -101,9 +104,9 @@ LENGTH = 8*BITRATE
 
 data_feeder = list(dataset.feed_epoch(DATA_PATH, N_FILES, BATCH_SIZE, SEQ_LEN, FRAME_SIZE, Q_LEVELS, Q_ZERO))
 print "File loaded"
-data = data_feeder[0][0][:]
+data = data_feeder[50][0][:]
 samples = numpy.zeros((N_SEQS, LENGTH), dtype='int32')
-samples[:, :SEQ_LEN] = data[:N_SEQS,:SEQ_LEN]
+samples[:, :RF] = data[:N_SEQS,:RF]
 
 for t in xrange(RF, LENGTH):
     probs = test_fn(samples[:,t-RF:t])

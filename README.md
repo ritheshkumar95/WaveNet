@@ -7,4 +7,4 @@ Disclaimer: this is a re-implementation of the model described in the WaveNet pa
 
 - wavenet.py -> Train the network
 - lib/ops.py -> Mini theano library
-- generate.py -> generates samples
+- generate() function in wavenet.py ==> generates samples
