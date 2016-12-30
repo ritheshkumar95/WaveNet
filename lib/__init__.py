@@ -4,6 +4,10 @@ import theano
 import theano.tensor as T
 import cPickle as pickle
 from collections import OrderedDict
+import os
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 _params = OrderedDict()
 
@@ -101,7 +105,12 @@ def save_params(path):
     for name, param in _params.iteritems():
         param_vals[name] = param.get_value()
 
-    with open(path, 'wb') as f:
+    try:
+        with open(path, 'wb') as f:
+            pickle.dump(param_vals, f)
+    except IOError:
+        os.makedirs(os.path.split(path)[0])
+        f = open(path,"wb")
         pickle.dump(param_vals, f)
 
 def load_params(path):
@@ -115,3 +124,50 @@ def clear_all_params():
     to_delete = [p_name for p_name in _params]
     for p_name in to_delete:
         del _params[p_name]
+
+__train_log_file_name = 'train_info.pkl'
+def save_training_info(values, path):
+    """
+    Gets a set of values as dictionary and append them to a log file.
+    stores in <path>/train_log.pkl
+    """
+    file_name = os.path.join(path, __train_log_file_name)
+    try:
+        with open(file_name, "rb") as f:
+            log = pickle.load(f)
+    except IOError:  # first time
+        if not os.path.exists(path):
+            os.makedirs(path)
+        log = {}
+        for k in values.keys():
+            log[k] = []
+    for k, v in values.items():
+        log[k].append(v)
+    with open(file_name, "wb") as f:
+        pickle.dump(log, f)
+
+def plot_traing_info(x, ylist, path):
+    """
+    Loads log file and plot x and y values as provided by input.
+    Saves as <path>/train_log.png
+    """
+    file_name = os.path.join(path, __train_log_file_name)
+    try:
+        with open(file_name, "rb") as f:
+            log = pickle.load(f)
+    except IOError:  # first time
+        warnings.warn("There is no {} file here!!!".format(file_name))
+        return
+    plt.figure()
+    x_vals = log[x]
+    for y in ylist:
+        y_vals = log[y]
+        if len(y_vals) != len(x_vals):
+            warning.warn("One of y's: {} does not have the same length as x:{}".format(y, x))
+        plt.plot(x_vals, y_vals, label=y)
+        # assert len(y_vals) == len(x_vals), "not the same len"
+    plt.xlabel(x)
+    plt.legend()
+    #plt.show()
+    plt.savefig(file_name[:-3]+'png', bbox_inches='tight')
+    plt.close('all')

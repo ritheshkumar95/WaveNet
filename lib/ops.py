@@ -233,6 +233,66 @@ def GRUStep(name, input_dim, hidden_dim, x_t, h_tm1):
     one = lib.floatX(1.0)
     return (update * candidate) + ((one - update) * h_tm1)
 
+def __ConvLSTMStep(
+        name,
+        seq_len,
+        input_dim,
+        hidden_dim,
+        current_input,
+        last_hidden,
+        last_cell,
+        dilation_depth=10,
+        inp_bias_init=0.,
+        forget_bias_init=3.,
+        out_bias_init=0.,
+        g_bias_init=0.):
+    # X_t*(U^i, U^f, U^o, U^g)
+
+    dilations = [2**i for i in xrange(dilation_depth)]
+    prev_conv = current_input
+    last_cell_stack = T.concatenate((last_cell,last_cell),axis=1)
+    for i,value in enumerate(dilations):
+        #prev_conv = lib.ops.conv1d(name+".WaveNetConv%d"%(i+1),prev_conv,2,1,hidden_dim,input_dim,True,False,pad=(dilation,0),filter_dilation=(dilation,1))[:,:,:current_input.shape[2],:]
+        prev_conv,y = lib.ops.WaveNetConv1d("WaveNetBlock-%d"%(i+1),prev_conv,2,hidden_dim,input_dim,bias=True,batchnorm=False,dilation=value)
+
+    prev_conv = T.concatenate((prev_conv,last_hidden),axis=1)
+    prev_conv = lib.ops.conv1d(name+".ConvGates",prev_conv,1,1,4*hidden_dim,2*input_dim,True,False)
+
+    W_cell = lib.param(name+'.CellWeights',lasagne.init.HeNormal().sample((3*hidden_dim,seq_len,1)))
+    inp_forget = T.nnet.sigmoid(prev_conv[:,:2*hidden_dim] + W_cell[:2*hidden_dim]*last_cell_stack)
+    i_t = inp_forget[:,:hidden_dim]
+    f_t = inp_forget[:,hidden_dim:]
+
+    C_t = f_t*last_cell + i_t*T.tanh(prev_conv[:,2*hidden_dim:3*hidden_dim])
+
+    o_t = T.nnet.sigmoid(prev_conv[:,3*hidden_dim:]+W_cell[2*hidden_dim:]*C_t)
+
+    H_t = o_t*T.tanh(C_t)
+
+    return H_t,C_t
+
+def ConvLSTM(name, seq_len, input_dim, hidden_dim, inputs, h0=None, c0=None):
+    #inputs.shape = (batch_size,N_FRAMES,FRAME_SIZE)
+
+    def step(x_t, h_tm1, c_tm1):
+        return __ConvLSTMStep(
+            name+'.Step',
+            seq_len,
+            input_dim,
+            hidden_dim,
+            x_t,
+            h_tm1,
+            c_tm1
+        )
+
+    outputs, _ = theano.scan(
+        step,
+        sequences=[inputs],
+        outputs_info=[h0,c0],
+    )
+
+    return outputs
+
 def GRU(name, input_dim, hidden_dim, inputs, h0=None):
     #inputs.shape = (batch_size,N_FRAMES,FRAME_SIZE)
     inputs = inputs.transpose(1,0,2)
@@ -255,6 +315,8 @@ def GRU(name, input_dim, hidden_dim, inputs, h0=None):
     out = outputs.dimshuffle(1,0,2)
     out.name = name+'.output'
     return out
+
+
 
 def recurrent_fn(x_t, h_tm1,name,input_dim,hidden_dim,W1,b1,W2,b2):
     A1 = T.nnet.sigmoid(BatchNorm(name+".Inp2Hid",T.dot(x_t,W1[:input_dim]),2*hidden_dim,layer='recurrent') +
@@ -409,10 +471,10 @@ def HRED_GRU(name, input_dim, hidden_dim, inputs, h0=None):
 def conv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False,pad='valid',filter_dilation=(1,1),run_mode=0):
     W = lib.param(
         name+'.W',
-        lasagne.init.HeNormal().sample((n_filters,depth,1,kernel)).astype('float32')
+        lasagne.init.HeNormal().sample((n_filters,depth,kernel,1)).astype('float32')
         )
 
-    out = T.nnet.conv2d(input,W,subsample=(1,stride),border_mode=pad,filter_dilation=filter_dilation)
+    out = T.nnet.conv2d(input,W,subsample=(stride,1),border_mode=pad,filter_dilation=filter_dilation)
 
     if bias:
         b = lib.param(
@@ -440,19 +502,15 @@ def ResNetConv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=F
     return out
 
 def WaveNetConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,dilation=1):
-    conv1 = lib.ops.conv1d(name+".filter",input,kernel,1,n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:input.shape[-1]]
-    conv2 = lib.ops.conv1d(name+".gate",input,kernel,1,n_filters,depth,bias,batchnorm,pad=(0,dilation),filter_dilation=(1,dilation))[:,:,:,:input.shape[-1]]
-    z = T.tanh(conv1)*T.nnet.sigmoid(conv2)
-    out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=bias,batchnorm=batchnorm)
-    return out+input,out
+    conv1 = lib.ops.conv1d(name+".filter&gate",input,kernel,1,2*n_filters,depth,True,batchnorm,pad=(dilation,0),filter_dilation=(dilation,1))[:,:,:input.shape[2],:]
+    z = T.nnet.sigmoid(conv1[:,:n_filters,:,:])*T.tanh(conv1[:,n_filters:,:,:])
+    out = lib.ops.conv1d(name+".projection&param_skip",z,1,1,2*depth,n_filters,bias=bias,batchnorm=batchnorm)
+    return out[:,:depth,:,:]+input,out[:,depth:,:,:]
 
-def WaveNetGenConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,run_mode=1):
-    conv1 = lib.ops.conv1d(name+".filter",input,kernel,2,n_filters,depth,bias,batchnorm)
-    conv2 = lib.ops.conv1d(name+".gate",input,kernel,2,n_filters,depth,bias,batchnorm)
-    z = T.tanh(conv1)*T.nnet.sigmoid(conv2)
-    out = lib.ops.conv1d(name+".projection",z,1,1,depth,n_filters,bias=bias,batchnorm=batchnorm)
-    return out+input[:,:,:,1::2],out
-
+def DenseNetConv1d(name,input,kernel,n_filters,depth,bias=False,batchnorm=False,dilation=1):
+    conv1 = lib.ops.conv1d(name+".filter&gate",input,kernel,1,2*n_filters,depth,True,batchnorm,pad=(dilation,0),filter_dilation=(dilation,1))[:,:,:input.shape[2],:]
+    z = T.nnet.sigmoid(conv1[:,:n_filters,:,:])*T.tanh(conv1[:,n_filters:,:,:])
+    return z
 
 def ResNetDeconv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False,act=True):
     if stride==1 and n_filters==depth:
@@ -470,24 +528,18 @@ def ResNetDeconv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm
         out = conv1+project
     return out
 
-def deconv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False,output=None,pad='valid'):
-    if output:
-        o = output
-        if kernel==3:
-            if stride==1:
-                o += 2
-            if stride==2:
-                o += 1
-    else:
-        o = output = stride*(input.shape[-1]-1) + kernel
+def deconv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False,pad='valid'):
+
+    o = output = stride*(input.shape[2]-1) + kernel
+    if type(pad)==tuple:
+        o -= 2*pad[0]
 
     W = lib.param(
         name+'.W',
-        lasagne.init.HeNormal().sample((depth,n_filters,1,kernel)).astype('float32')
+        lasagne.init.GlorotUniform().sample((depth,n_filters,kernel,1)).astype('float32')
         )
 
-    ### Changing this to fit kernel 3
-    out = T.nnet.abstract_conv.conv2d_grad_wrt_inputs(output_grad=input,filters=W,input_shape=(None,n_filters,1,o),subsample=(1,stride))[:,:,:,:output]
+    out = T.nnet.abstract_conv.conv2d_grad_wrt_inputs(output_grad=input,filters=W,input_shape=(None,n_filters,o,1),border_mode=pad,subsample=(stride,1))
 
     if bias:
         b = lib.param(
@@ -502,15 +554,18 @@ def deconv1d(name,input,kernel,stride,n_filters,depth,bias=False,batchnorm=False
 
     return out
 
-def pool(input):
-    x = input[:,:,0,:]
-    return x.reshape((-1,x.shape[1]*4,x.shape[2]/4))[:,:,None,:]
+def pool1d(input,subsample,pad,pool_indices=None):
+    import theano.tensor.signal.pool
+    out = T.signal.pool.pool_2d(input,(subsample,1),ignore_border=True,padding=(pad,0))
+    if pool_indices:
+        indices = T.grad(None,wrt=input,known_grads={out:T.ones_like(out)})
+        return out,indices
+    return out
 
-def subsample(input):
-    x = input[:,:,0,:]
-    idx = T.arange(0,x.shape[2],4)
-    return x[:,:,idx][:,:,None,:]
-
-def upsample(input):
-    x = input[:,:,0,:]
-    return x.reshape((-1,x.shape[1]/4,x.shape[2]*4))[:,:,None,:]
+def unpool1d(input,upsample,desired_length,pool_indices=None):
+    out = T.extra_ops.repeat(input,upsample,axis=2)
+    if pool_indices:
+        temp = pool_indices*out[:,:,upsample-1:upsample-1]
+        pad = T.alloc(0,temp.shape[0],temp.shape[1],upsample-1,temp.shape[3])
+        return T.concatenate((pad,temp),axis=2)[:,:,:desired_length]
+    return out[:,:,:desired_length]

@@ -10,7 +10,7 @@ from platoon.channel import Controller
 
 
 class WaveNetController(Controller):
-    def __init__(self, max_mb, patience, valid_freq, default_args):
+    def __init__(self, max_mb,saveFreq,default_args):
         """
         Initialize the WaveNetController
         Parameters
@@ -27,16 +27,13 @@ class WaveNetController(Controller):
         """
 
         super(WaveNetController, self).__init__(**default_args)
-        self.patience = patience
         self.max_mb = int(max_mb)
 
-        self.valid_freq = valid_freq
         self.uidx = 0
         self.eidx = 0
-        self.history_errs = []
-        self.bad_counter = 0
+        self.saveFreq = saveFreq
 
-        self.valid = False
+        self._save_params = False
         self.start_time = None
         self._should_stop = False
 
@@ -70,37 +67,26 @@ class WaveNetController(Controller):
             if not self._should_stop:
                 if self.start_time is None:
                     self.start_time = time.time()
-
-                if self.valid:
-                    self.valid = False
-                    control_response = 'valid'
+                if self._save_params:
+                    control_response = 'save'
                 else:
                     control_response = 'train'
             else:
                 control_response = 'stop'
         elif req == 'done':
             self.uidx += req_info['train_len']
+            if self.uidx%self.saveFreq==0:
+                self._save_params=True
 
-            if numpy.mod(self.uidx, self.valid_freq) == 0:
-                self.valid = True
-        elif req == 'pred_errors':
-            valid_err = req_info['valid_err']
-            test_err = req_info['test_err']
-            self.history_errs.append([valid_err, test_err])
-            harr = numpy.array(self.history_errs)[:, 0]
+        elif req == 'saved':
+            self._save_params=False
 
-            if valid_err <= harr.min():
-                self.bad_counter = 0
-                control_response = 'best'
-                print("Best error valid:", valid_err, "test:", test_err)
-            elif (len(self.history_errs) > self.patience and valid_err >= harr[:-self.patience].min()):
-                self.bad_counter += 1
-
-        if self.uidx > self.max_mb or self.bad_counter > self.patience:
+        if self.uidx > self.max_mb:
             if not self._should_stop:
                 print("Training time {:.4f}s".format(time.time() - self.start_time))
                 print("Number of samples:", self.uidx)
-            self._should_stop = True
+            ##NEVER STOPPING!
+            self._should_stop = False
 
         return control_response
 
@@ -109,21 +95,16 @@ def wavenet_control(saveFreq=1110, saveto=None):
     parser = Controller.default_parser()
     parser.add_argument('--max-mb', default=((5000 * 1998) / 10), type=int,
                         required=False, help='Maximum mini-batches to train upon in total.')
-    parser.add_argument('--patience', default=10, type=int,
-                        required=False, help='Maximum patience when failing to get better validation results.')
-    parser.add_argument('--valid-freq', default=370, type=int,
-                        required=False, help='How often in mini-batches prediction function should get validated.')
+
     args = parser.parse_args()
 
-    l = WaveNetController(max_mb=100000,
-                       patience=None,
-                       valid_freq=9999999,
+    l = WaveNetController(max_mb=10000,saveFreq=1000,
                        default_args=Controller.default_arguments(args))
 
     print("Controller is ready")
     return l.serve()
 
 if __name__ == '__main__':
-    rcode = lstm_control()
+    rcode = wavenet_control()
     if rcode != 0:
         sys.exit(rcode)

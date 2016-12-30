@@ -144,7 +144,7 @@ def feed_epoch(data_path, n_files, BATCH_SIZE, SEQ_LEN, OVERLAP, Q_LEVELS, Q_ZER
             subbatch = batch[:, start : end]
             yield (subbatch, reset)
 
-def blizzard_feed_epoch(BATCH_SIZE, SEQ_LEN, STRIDE, RF=1025, N_FILES=None):
+def blizzard_feed_epoch(BATCH_SIZE, SEQ_LEN, STRIDE, RF=1025, N_FILES=None, DISTRIBUTED=False,WORKER_ID=None):
     global random_seed
     def process_wav(desired_sample_rate, filename, use_ulaw):
         channels = scipy.io.wavfile.read(filename)
@@ -224,11 +224,17 @@ def blizzard_feed_epoch(BATCH_SIZE, SEQ_LEN, STRIDE, RF=1025, N_FILES=None):
 
     start=100
     DATA_PATH = "/data/lisatmp3/kumarrit/blizzard/"
+    if DISTRIBUTED:
+        random.seed(WORKER_ID)
+        start = random.choice(xrange(120000))
     paths = ['p%d.flac'%(start+i) for i in xrange(N_FILES)]
     random_seed += 1
     batches = []
+
     for i in xrange(len(paths) / BATCH_SIZE):
         batches.append(paths[i*BATCH_SIZE:(i+1)*BATCH_SIZE])
+
+    random.seed(random_seed)
     random.shuffle(batches)
     for batch_paths in batches:
         data = []
